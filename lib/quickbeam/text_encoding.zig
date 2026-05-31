@@ -470,8 +470,20 @@ fn is_overlong(cp: u32, sl: usize) bool {
 // ──────────────────── atob / btoa ────────────────────
 
 fn install_atob_btoa(ctx: *qjs.JSContext, global: qjs.JSValue) void {
-    _ = qjs.JS_SetPropertyStr(ctx, global, "btoa", qjs.JS_NewCFunction(ctx, &btoa_impl, "btoa", 1));
-    _ = qjs.JS_SetPropertyStr(ctx, global, "atob", qjs.JS_NewCFunction(ctx, &atob_impl, "atob", 1));
+    if (!has_global_property(ctx, global, "btoa")) {
+        _ = qjs.JS_SetPropertyStr(ctx, global, "btoa", qjs.JS_NewCFunction(ctx, &btoa_impl, "btoa", 1));
+    }
+
+    if (!has_global_property(ctx, global, "atob")) {
+        _ = qjs.JS_SetPropertyStr(ctx, global, "atob", qjs.JS_NewCFunction(ctx, &atob_impl, "atob", 1));
+    }
+}
+
+fn has_global_property(ctx: *qjs.JSContext, global: qjs.JSValue, name: [*:0]const u8) bool {
+    const value = qjs.JS_GetPropertyStr(ctx, global, name);
+    defer qjs.JS_FreeValue(ctx, value);
+
+    return !qjs.JS_IsUndefined(value);
 }
 
 const b64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

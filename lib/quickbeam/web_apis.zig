@@ -103,6 +103,8 @@ fn throw_dom_exception(ctx: ?*qjs.JSContext, message: [*:0]const u8, name: [*:0]
 // ──────────────────── performance.now ────────────────────
 
 fn install_performance(ctx: *qjs.JSContext, global: qjs.JSValue) void {
+    if (has_global_property(ctx, global, "performance")) return;
+
     const perf = qjs.JS_NewObject(ctx);
     _ = qjs.JS_SetPropertyStr(ctx, perf, "now", qjs.JS_NewCFunction(ctx, &performance_now, "now", 0));
     _ = qjs.JS_SetPropertyStr(ctx, global, "performance", perf);
@@ -124,6 +126,8 @@ fn performance_now(
 // ──────────────────── queueMicrotask ────────────────────
 
 fn install_queue_microtask(ctx: *qjs.JSContext, global: qjs.JSValue) void {
+    if (has_global_property(ctx, global, "queueMicrotask")) return;
+
     _ = qjs.JS_SetPropertyStr(ctx, global, "queueMicrotask", qjs.JS_NewCFunction(ctx, &queue_microtask_impl, "queueMicrotask", 1));
 }
 
@@ -161,7 +165,16 @@ fn microtask_trampoline(
 // ──────────────────── structuredClone ────────────────────
 
 fn install_structured_clone(ctx: *qjs.JSContext, global: qjs.JSValue) void {
+    if (has_global_property(ctx, global, "structuredClone")) return;
+
     _ = qjs.JS_SetPropertyStr(ctx, global, "structuredClone", qjs.JS_NewCFunction(ctx, &structured_clone_impl, "structuredClone", 1));
+}
+
+fn has_global_property(ctx: *qjs.JSContext, global: qjs.JSValue, name: [*:0]const u8) bool {
+    const value = qjs.JS_GetPropertyStr(ctx, global, name);
+    defer qjs.JS_FreeValue(ctx, value);
+
+    return !qjs.JS_IsUndefined(value);
 }
 
 fn structured_clone_impl(

@@ -1,6 +1,7 @@
 defmodule QuickBEAM.Native.Build do
   @moduledoc false
 
+  @zig_version "0.15.2"
   @targets ~w(x86_64-linux-gnu aarch64-linux-gnu aarch64-macos-none)
 
   def targets(force_build? \\ false, target \\ current_target())
@@ -35,7 +36,68 @@ defmodule QuickBEAM.Native.Build do
     """
   end
 
+  def ensure_compatible_zig!(target \\ current_target())
+
+  def ensure_compatible_zig!(target) do
+    if freebsd_target?(target) and
+         blank?(System.get_env("ZIG_EXECUTABLE_PATH")) and
+         blank?(System.get_env("ZIG_ARCHIVE_PATH")) and
+         !compatible_zig?(System.find_executable("zig")) do
+      case find_cached_freebsd_zig() do
+        nil -> :ok
+        path -> System.put_env("ZIG_EXECUTABLE_PATH", path)
+      end
+    end
+
+    :ok
+  end
+
   defp current_target, do: ZiglerPrecompiled.current_target_triple()
+
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(_), do: false
+
+  defp freebsd_target?(target), do: target |> to_string() |> String.contains?("freebsd")
+
+  defp find_cached_freebsd_zig do
+    cache_dir = :filename.basedir(:user_cache, ~c"zigler") |> List.to_string()
+    arch = freebsd_zig_arch()
+
+    [
+      Path.join(cache_dir, "zig-#{arch}-freebsd-#{@zig_version}/zig"),
+      Path.join(cache_dir, "zig-amd64-freebsd15.1-#{@zig_version}/zig")
+    ]
+    |> Enum.find(&compatible_zig?/1)
+  end
+
+  defp freebsd_zig_arch do
+    :system_architecture
+    |> :erlang.system_info()
+    |> to_string()
+    |> String.split("-")
+    |> List.first()
+    |> case do
+      "amd64" -> "x86_64"
+      arch -> arch
+    end
+  end
+
+  defp compatible_zig?(nil), do: false
+
+  defp compatible_zig?(path) do
+    File.exists?(path) and
+      match?({version, 0} when version == @zig_version, zig_version(path))
+  end
+
+  defp zig_version(path) do
+    case System.cmd(path, ["version"], stderr_to_stdout: true) do
+      {version, 0} -> {String.trim(version), 0}
+      other -> other
+    end
+  rescue
+    _ -> :error
+  end
 end
 
 defmodule QuickBEAM.Native do
@@ -160,11 +222,12 @@ defmodule QuickBEAM.Native do
                     do: [
                       "-std=c11",
                       "-D_GNU_SOURCE",
+                      "-DENABLE_DUMPS",
                       "-fsanitize=undefined",
                       "-fno-sanitize=function,unsigned-integer-overflow",
                       "-fsanitize-trap=undefined"
                     ],
-                    else: ["-std=c11", "-D_GNU_SOURCE"]
+                    else: ["-std=c11", "-D_GNU_SOURCE", "-DENABLE_DUMPS"]
 
   @quickjs_cflags @quickjs_cflags ++ @hidden_cflags
 
@@ -175,6 +238,7 @@ defmodule QuickBEAM.Native do
     )
 
   QuickBEAM.Native.Build.ensure_zigler_available!(force_build?)
+  QuickBEAM.Native.Build.ensure_compatible_zig!()
 
   if force_build? and
        is_nil(System.get_env("ZIG_LOCAL_CACHE_DIR")) do
@@ -190,7 +254,7 @@ defmodule QuickBEAM.Native do
     force_build: force_build?,
     targets: QuickBEAM.Native.Build.targets(force_build?),
     zig_code_path: "quickbeam.zig",
-    optimize: :env,
+    optimize: {:env, :fast},
     c: [
       include_dirs: [
         {:priv, "c_src"},
