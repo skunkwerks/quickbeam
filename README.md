@@ -16,6 +16,8 @@ end
 ```
 
 Requires Zig 0.15+ (installed automatically by Zigler, or use system Zig).
+Use `mix qb.compile` when building from source on platforms without a
+precompiled NIF.
 
 ## Quick start
 
@@ -514,6 +516,36 @@ mix ci
 
 Runs the full project quality gate: formatting, Credo, Dialyzer, Zig lint,
 TypeScript lint, duplicate-code checks, and tests.
+
+### Zig toolchain helpers
+
+Use the `qb.*` Mix aliases when compiling locally. They fetch Zig 0.15.2 with
+normalized platform names and set `ZIG_EXECUTABLE_PATH` before invoking Zigler:
+
+```sh
+mix qb.zig            # fetch/find the Zig toolchain for this host
+mix qb.compile        # compile with the managed Zig toolchain
+mix qb.format         # format Elixir and Zig files
+mix qb.format.check   # check formatting
+mix qb.test           # run the test suite
+```
+
+The included POSIX/BSD `Makefile` is only a thin wrapper:
+
+```sh
+make compile
+make format
+make test
+```
+
+On FreeBSD, the aliases work around Zigler/Zig archive naming differences:
+`amd64` maps to `x86_64-freebsd`, and `arm64`/`aarch64` maps to
+`aarch64-freebsd`. To fetch a different toolchain explicitly:
+
+```sh
+QUICKBEAM_ZIG_ARCH=arm64 QUICKBEAM_ZIG_OS=FreeBSD mix qb.zig
+QUICKBEAM_ZIG_ARCH=aarch64 QUICKBEAM_ZIG_OS=freebsd mix qb.zig
+```
 
 ## Examples
 

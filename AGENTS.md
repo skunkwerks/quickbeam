@@ -3,12 +3,23 @@
 ## Build
 
 ```sh
-QUICKBEAM_BUILD=1 mix compile   # build NIF from source (requires Zig 0.15+)
-mix compile                     # use precompiled NIF
-mix test                        # full suite (1300+ tests)
+mix qb.zig      # fetch/find Zig 0.15.2 and set ZIG_EXECUTABLE_PATH
+mix qb.compile  # compile with the managed Zig toolchain
+mix qb.test     # full suite (1300+ tests)
 ```
 
-Set `QUICKBEAM_BUILD=1` for any compilation that touches Zig/C code.
+The POSIX/BSD `Makefile` delegates to the same aliases:
+
+```sh
+make compile
+make format
+make test
+```
+
+Set `QUICKBEAM_BUILD=1` for any compilation that touches Zig/C code. On
+FreeBSD, `mix qb.zig` maps `amd64` to `x86_64-freebsd` and `arm64`/`aarch64`
+to `aarch64-freebsd`. Override detection with `QUICKBEAM_ZIG_ARCH` and
+`QUICKBEAM_ZIG_OS` when needed.
 
 ## Architecture
 

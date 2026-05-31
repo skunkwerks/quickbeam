@@ -1,7 +1,52 @@
+defmodule QuickBEAM.Native.Build do
+  @moduledoc false
+
+  @targets ~w(x86_64-linux-gnu aarch64-linux-gnu aarch64-macos-none)
+
+  def targets(force_build? \\ false, target \\ current_target())
+  def targets(false, _target), do: @targets
+
+  def targets(true, target) do
+    (@targets ++ List.wrap(target))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  def force_build?(env_value, config_value, target \\ current_target()) do
+    env_value in ["1", "true"] or config_value == true or target not in @targets
+  end
+
+  def ensure_zigler_available!(force_build?, zigler_loaded? \\ Code.ensure_loaded?(Zig))
+  def ensure_zigler_available!(false, _zigler_loaded?), do: :ok
+  def ensure_zigler_available!(true, true), do: :ok
+
+  def ensure_zigler_available!(true, false) do
+    raise """
+    QuickBEAM needs to compile its Zig NIF from source, but Zigler is not available.
+
+    Add Zigler to your application's dependencies:
+
+        {:zigler, "~> 0.15.2", runtime: false, optional: true}
+
+    Then run:
+
+        mix deps.get
+        mix deps.compile quickbeam --force
+    """
+  end
+
+  defp current_target, do: ZiglerPrecompiled.current_target_triple()
+end
+
 defmodule QuickBEAM.Native do
   @moduledoc false
 
   @version Mix.Project.config()[:version]
+  @wamr_platform (case :os.type() do
+                    {:unix, :darwin} -> "darwin"
+                    {:unix, :freebsd} -> "freebsd"
+                    _other -> "linux"
+                  end)
 
   @c_src_dir Application.app_dir(:quickbeam, "priv/c_src")
   @hidden_cflags ["-fvisibility=hidden"]
@@ -65,7 +110,7 @@ defmodule QuickBEAM.Native do
     "-I#{@c_src_dir}/wamr/shared/utils",
     "-I#{@c_src_dir}/wamr/shared/platform/include",
     "-I#{@c_src_dir}/wamr/shared/mem-alloc",
-    "-I#{@c_src_dir}/wamr/shared/platform/#{if(:os.type() == {:unix, :darwin}, do: "darwin", else: "linux")}"
+    "-I#{@c_src_dir}/wamr/shared/platform/#{@wamr_platform}"
   ]
   @wamr_cflags @wamr_base_cflags ++ @hidden_cflags
 
@@ -100,7 +145,7 @@ defmodule QuickBEAM.Native do
                [
                  if(:os.type() == {:unix, :darwin},
                    do: "priv/c_src/wamr/shared/platform/darwin/platform_init.c",
-                   else: "priv/c_src/wamr/shared/platform/linux/platform_init.c"
+                   else: "priv/c_src/wamr/shared/platform/#{@wamr_platform}/platform_init.c"
                  )
                ] ++
                ["priv/c_src/wamr/common/arch/invokeNative_general.c"] ++
@@ -123,7 +168,15 @@ defmodule QuickBEAM.Native do
 
   @quickjs_cflags @quickjs_cflags ++ @hidden_cflags
 
-  if System.get_env("QUICKBEAM_BUILD") in ["1", "true"] and
+  force_build? =
+    QuickBEAM.Native.Build.force_build?(
+      System.get_env("QUICKBEAM_BUILD"),
+      Application.compile_env(:zigler_precompiled, [:force_build, :quickbeam], false)
+    )
+
+  QuickBEAM.Native.Build.ensure_zigler_available!(force_build?)
+
+  if force_build? and
        is_nil(System.get_env("ZIG_LOCAL_CACHE_DIR")) do
     zig_local_cache_dir = Path.expand(Path.join(Mix.Project.build_path(), "zig-cache"))
     File.mkdir_p!(zig_local_cache_dir)
@@ -134,8 +187,8 @@ defmodule QuickBEAM.Native do
     otp_app: :quickbeam,
     base_url: "https://github.com/elixir-volt/quickbeam/releases/download/v#{@version}",
     version: @version,
-    force_build: System.get_env("QUICKBEAM_BUILD") in ["1", "true"],
-    targets: ~w(x86_64-linux-gnu aarch64-linux-gnu aarch64-macos-none),
+    force_build: force_build?,
+    targets: QuickBEAM.Native.Build.targets(force_build?),
     zig_code_path: "quickbeam.zig",
     optimize: :env,
     c: [
